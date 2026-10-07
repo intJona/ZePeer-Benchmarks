@@ -1,0 +1,9 @@
+# Cache directory for disk-backed scan results
+.cache/
+
+# Standard Python/Git ignores
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
