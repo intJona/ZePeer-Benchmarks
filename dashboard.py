@@ -209,15 +209,18 @@ def chart(title: str, metric: str, unit: str, y_log: bool, runs: list[dict], agg
 
 
 def decade_sizes(sizes) -> list[float]:
-    """Smallest size recorded in each log10 decade -- regular sample points for a log-scale sweep."""
+    """Smallest size recorded in each log10 decade, plus the overall max -- regular sample points for a
+    log-scale sweep. The max is forced in because it can share a decade with (and get shadowed by) a
+    smaller size, e.g. 256 MB and 128 MB both fall in the 10^8-10^9 decade."""
+    sizes = [size for size in sizes if size > 0]
+    if not sizes:
+        return []
     buckets: dict[int, float] = {}
     for size in sizes:
-        if size <= 0:
-            continue
         decade = math.floor(math.log10(size))
         if decade not in buckets or size < buckets[decade]:
             buckets[decade] = size
-    return sorted(buckets.values())
+    return sorted(set(buckets.values()) | {max(sizes)})
 
 
 def format_size(size: float) -> str:
