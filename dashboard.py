@@ -127,6 +127,8 @@ def get_runs(force_refresh: bool = False) -> tuple[list[dict], dict | None, bool
     banner = st.empty()
     banner.warning(REFRESH_NOTICE if force_refresh else FIRST_SCAN_NOTICE)
     t0 = time.time()
+    if force_refresh:
+        discover_runs.clear()  # bypass st.cache_data's own stale in-memory result too
     with st.spinner("Scanning RESULTS_ROOT..."):
         runs = discover_runs()
     meta = cache_store.make_meta(t0)
@@ -221,6 +223,9 @@ def main() -> None:
         st.sidebar.caption(f"Scan cached {age} (took {meta['duration_seconds']}s)")
     
     skipped_results = discover_skipped_results()
+    if force_refresh:
+        discover_skipped_results.clear()
+        skipped_results = discover_skipped_results()
     if not all_runs:
         st.info("No parseable ze_peer result files found under results/.")
         return
