@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import time
@@ -207,8 +208,49 @@ def chart(title: str, metric: str, unit: str, y_log: bool, runs: list[dict], agg
     return figure
 
 
-def metric_at(rows: list[dict], size: float) -> float | None:
-    return next((row["value"] for row in rows if row["size"] == size), None)
+def decade_sizes(sizes) -> list[float]:
+    """Smallest size recorded in each log10 decade -- regular sample points for a log-scale sweep."""
+    buckets: dict[int, float] = {}
+    for size in sizes:
+        if size <= 0:
+            continue
+        decade = math.floor(math.log10(size))
+        if decade not in buckets or size < buckets[decade]:
+            buckets[decade] = size
+    return sorted(buckets.values())
+
+
+def format_size(size: float) -> str:
+    if size >= 1024 * 1024 and size % (1024 * 1024) == 0:
+        return f"{int(size // (1024 * 1024))} MB"
+    if size >= 1024 and size % 1024 == 0:
+        return f"{int(size // 1024)} KB"
+    return f"{int(size)} B"
+
+
+def decade_table(runs: list[dict], metric: str, show_directions: set[str]) -> list[dict]:
+    """One row per (config, direction) with the metric value at the start of each log-scale decade."""
+    aggregated = aggregate_runs(runs, metric)
+    all_sizes = {row["size"] for by_direction in aggregated.values() for rows in by_direction.values() for row in rows}
+    decades = decade_sizes(all_sizes)
+    table = []
+    for config in sorted(aggregated):
+        matching_runs = [run for run in runs if run["config"] == config]
+        environment = matching_runs[0]["environment"] if matching_runs else {}
+        for direction, rows in aggregated[config].items():
+            if direction not in show_directions:
+                continue
+            value_by_size = {row["size"]: row["value"] for row in rows}
+            entry = {
+                "Configuration": config,
+                "Direction": direction.title(),
+                "Runs": len(matching_runs),
+                "Devices": f"{environment.get('src_device', '?')} -> {environment.get('dst_device', '?')}",
+            }
+            for size in decades:
+                entry[format_size(size)] = value_by_size.get(size)
+            table.append(entry)
+    return table
 
 
 def main() -> None:
@@ -243,7 +285,7 @@ def main() -> None:
     st.sidebar.divider()
     st.sidebar.subheader("Trace Visibility")
     show_write = st.sidebar.checkbox("Show Write traces", value=True)
-    show_read = st.sidebar.checkbox("Show Read traces", value=True)
+    show_read = st.sidebar.checkbox("Show Read traces", value=False)
     show_directions = {direction for direction, show in [("write", show_write), ("read", show_read)] if show}
     if not show_directions:
         st.warning("Select at least one trace direction (Write or Read).")
@@ -258,23 +300,11 @@ def main() -> None:
     with right:
         st.plotly_chart(chart("P2P latency", "latency_us", "us", True, selected_runs, latency_aggregated, show_directions), use_container_width=True)
 
-    summary = []
-    for config in sorted(bw_aggregated):
-        matching_runs = [run for run in selected_runs if run["config"] == config]
-        environment = matching_runs[0]["environment"]
-        write_bw = bw_aggregated[config].get("write", []) if "write" in show_directions else []
-        read_bw = bw_aggregated[config].get("read", []) if "read" in show_directions else []
-        write_latency = latency_aggregated.get(config, {}).get("write", []) if "write" in show_directions else []
-        summary.append({
-            "Configuration": config,
-            "Runs": len(matching_runs),
-            "8 B latency write (us)": metric_at(write_latency, 8),
-            "256 MB BW write (GB/s)": metric_at(write_bw, 256 * 1024 * 1024),
-            "256 MB BW read (GB/s)": metric_at(read_bw, 256 * 1024 * 1024),
-            "Devices": f"{environment.get('src_device', '?')} -> {environment.get('dst_device', '?')}",
-        })
-    st.subheader("Median Summary")
-    st.dataframe(summary, use_container_width=True, hide_index=True)
+    st.subheader("Bandwidth by decade (GB/s)")
+    st.dataframe(decade_table(selected_runs, "bw_gbps", show_directions), use_container_width=True, hide_index=True)
+
+    st.subheader("Latency by decade (us)")
+    st.dataframe(decade_table(selected_runs, "latency_us", show_directions), use_container_width=True, hide_index=True)
 
     with st.expander("Captured run metadata"):
         for run in selected_runs:
