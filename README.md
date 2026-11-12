@@ -17,7 +17,6 @@ few system packages.
 ## First build
 
 ```bash
-cd "/home/intel/PCIe ZePeer Benchmarks"
 sudo apt-get install -y cmake libpng-dev libboost-all-dev libva-dev libze-dev
 ./scripts/build.sh
 ```
